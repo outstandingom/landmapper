@@ -1,6 +1,27 @@
 {
   "dependencies": {
     "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
     "android": "^0.0.8"
-  }
+  },
+  "name": "landmapper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/outstandingom/landmapper.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/outstandingom/landmapper/issues"
+  },
+  "homepage": "https://github.com/outstandingom/landmapper#readme"
 }

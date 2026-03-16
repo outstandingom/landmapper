@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Multi-Land Mapping for Farmers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #0f1724;
+      color: #e6eef8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+    }
+    h1 { margin: 10px 0; font-size: 20px; }
+    button {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      margin: 4px;
+      background: #60a5fa;
+      color: #042033;
+      font-weight: bold;
+    }
+    #map {
+      height: 400px;
+      width: 100%;
+      max-width: 700px;
+      border-radius: 10px;
+      margin-top: 14px;
+    }
+    ul { list-style: none; padding: 0; margin: 12px 0; width: 100%; max-width: 700px; }
+    li { background: rgba(255,255,255,0.05); margin: 4px 0; padding: 6px; border-radius: 6px; }
+    #landsBox { margin-top: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; max-width: 700px; width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>Multi-Land Mapping</h1>
+  <div>
+    <button onclick="startTracking()">Start Tracking</button>
+    <button onclick="stopTracking()">Stop Tracking</button>
+    <button onclick="addCorner()">➕ Add Corner</button>
+    <button onclick="finishLand()">✅ Finish Land</button>
+    <button onclick="resetAll()">♻ Reset All</button>
+  </div>
+
+  <p id="status">Status: Not tracking</p>
+  <p>Current Location: <span id="coords">—</span></p>
+
+  <ul id="cornerList"></ul>
+  <div id="map"></div>
+  <div id="landsBox">
+    <b>All Lands:</b>
+    <div id="landsList"></div>
+    <p id="totalArea"><b>Total Area:</b> —</p>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <script>
+    let map = L.map('map').setView([20.5937, 78.9629], 5); // India center
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+    let watchId = null;
+    let currentPosMarker = null;
+    let currentCoords = null;
+
+    let currentCorners = [];    // corners for the land being drawn
+    let allLands = [];          // stores multiple lands
+    let drawnLayers = [];       // stores Leaflet polygons for cleanup
+
+    function startTracking() {
+      if (!navigator.geolocation) { alert("Geolocation not supported"); return; }
+      document.getElementById("status").textContent = "Status: Tracking...";
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        currentCoords = [latitude, longitude];
+        document.getElementById("coords").textContent = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        
+        if (currentPosMarker) {
+          currentPosMarker.setLatLng(currentCoords);
+        } else {
+          currentPosMarker = L.marker(currentCoords).addTo(map);
+        }
+        map.setView(currentCoords, 18);
+      }, err => { alert("Error getting location: " + err.message); }, 
+      { enableHighAccuracy: true, maximumAge: 1000 });
+    }
+
+    function stopTracking() {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        document.getElementById("status").textContent = "Status: Stopped";
+      }
+    }
+
+    function addCorner() {
+      if (!currentCoords) { alert("No location yet!"); return; }
+      currentCorners.push(currentCoords);
+      updateCornerList();
+      L.circleMarker(currentCoords, {radius:6, color:"red"}).addTo(map);
+    }
+
+    function updateCornerList() {
+      const list = document.getElementById("cornerList");
+      list.innerHTML = "";
+      currentCorners.forEach((c, i) => {
+        const li = document.createElement("li");
+        li.textContent = `Corner ${i+1}: (${c[0].toFixed(6)}, ${c[1].toFixed(6)})`;
+        list.appendChild(li);
+      });
+    }
+
+    function finishLand() {
+      if (currentCorners.length < 3) {
+        alert("At least 3 corners needed to make a land");
+        return;
+      }
+      // Create polygon
+      const poly = L.polygon(currentCorners, {color: 'lime', fillOpacity: 0.3}).addTo(map);
+      drawnLayers.push(poly);
+      map.fitBounds(poly.getBounds());
+
+      // Calculate area with Turf.js
+      const polygon = turf.polygon([[...currentCorners.map(c => [c[1], c[0]]), [currentCorners[0][1], currentCorners[0][0]]]]);
+      let areaSqMeters = turf.area(polygon);
+      let areaHectares = areaSqMeters / 10000;
+      let areaAcres = areaSqMeters / 4046.856;
+
+      // Save this land
+      allLands.push({ corners: [...currentCorners], areaSqMeters, areaHectares, areaAcres });
+      updateLandsList();
+
+      // Reset current land
+      currentCorners = [];
+      updateCornerList();
+    }
+
+    function updateLandsList() {
+      const list = document.getElementById("landsList");
+      list.innerHTML = "";
+      let totalMeters = 0;
+      let totalAcres = 0;
+      let totalHectares = 0;
+
+      allLands.forEach((land, i) => {
+        totalMeters += land.areaSqMeters;
+        totalAcres += land.areaAcres;
+        totalHectares += land.areaHectares;
+
+        const div = document.createElement("div");
+        div.innerHTML = `
+          <b>Land ${i+1}:</b><br>
+          ${land.areaSqMeters.toFixed(2)} m² |
+          ${land.areaHectares.toFixed(4)} ha |
+          ${land.areaAcres.toFixed(4)} acres
+          <hr style="opacity:0.2">
+        `;
+        list.appendChild(div);
+      });
+
+      document.getElementById("totalArea").innerHTML = `
+        <b>Total Area:</b><br>
+        ${totalMeters.toFixed(2)} m² |
+        ${totalHectares.toFixed(4)} ha |
+        ${totalAcres.toFixed(4)} acres
+      `;
+    }
+
+    function resetAll() {
+      currentCorners = [];
+      allLands = [];
+      updateCornerList();
+      updateLandsList();
+      drawnLayers.forEach(layer => map.removeLayer(layer));
+      drawnLayers = [];
+      document.getElementById("totalArea").innerHTML = "<b>Total Area:</b> —";
+    }
+  </script>
+</body>
+</html>
